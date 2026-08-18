@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { MASTER_STORYTELLER_PROMPT, buildRevisionPrompt } from './prompt';
 import { nextSuggestion } from './cycler';
 import { LENGTH_OPTIONS, lengthById, maxOutputTokensFor } from './length';
-import { compilePayload, temperatureFor, FACT_TEMPERATURE, FICTION_TEMPERATURE } from './payload';
+import { compilePayload, resolveRequest, temperatureFor, FACT_TEMPERATURE, FICTION_TEMPERATURE } from './payload';
 import { missingMandatory, isReadyToGenerate, gentlePromptFor } from './validate';
-import { storyPayloadSchema, setValue, SKIPPED, UNVISITED, type StoryConfig } from './schema';
+import { storyRequestSchema, setValue, SKIPPED, UNVISITED, type StoryConfig } from './schema';
 import { suggestFor } from './suggestions';
 import { FIELDS, MANDATORY_FIELDS, OPTIONAL_FIELDS } from './fields';
 import { initialConfig } from '@/lib/state/story-reducer';
@@ -163,7 +163,7 @@ describe('gentlePromptFor', () => {
 describe('compilePayload', () => {
   it('produces a payload that satisfies the wire schema', () => {
     const payload = compilePayload(completeConfig());
-    expect(() => storyPayloadSchema.parse(payload)).not.toThrow();
+    expect(() => storyRequestSchema.parse(payload)).not.toThrow();
   });
 
   it('maps state onto the prompt vocabulary', () => {
@@ -172,7 +172,8 @@ describe('compilePayload', () => {
     expect(payload.setting).toEqual({ time: '1920s', place: 'A quiet cabin' });
     expect(payload.isFact).toBe(false);
     expect(payload.tone).toEqual({ flavor: 'Humor', intensity: 7 });
-    expect(payload.length).toEqual({ label: 'Short Story', targetWords: 1500 });
+    expect(payload.lengthId).toBe('short');
+    expect(resolveRequest(payload).length).toEqual({ label: 'Short Story', targetWords: 1500 });
     expect(payload.characters[0]).toEqual({
       name: 'Wren',
       age: '11',
@@ -244,7 +245,7 @@ describe('suggestFor', () => {
       config = { ...config, [field.id]: setValue(suggestFor(field.id)) } as StoryConfig;
     }
     expect(missingMandatory(config)).toEqual([]);
-    expect(() => storyPayloadSchema.parse(compilePayload(config))).not.toThrow();
+    expect(() => storyRequestSchema.parse(compilePayload(config))).not.toThrow();
   });
 
   it('keeps tone intensity inside the 1-10 band the prompt describes', () => {
@@ -258,6 +259,62 @@ describe('suggestFor', () => {
   it('covers every optional field too', () => {
     for (const field of OPTIONAL_FIELDS) {
       expect(suggestFor(field.id)).toBeDefined();
+    }
+  });
+});
+
+describe('storyRequestSchema bounds', () => {
+  const valid = () => compilePayload(completeConfig());
+
+  it('accepts a payload the console actually produces', () => {
+    expect(storyRequestSchema.safeParse(valid()).success).toBe(true);
+  });
+
+  it('refuses an oversized free-text field', () => {
+    const attack = { ...valid(), conflict: 'x'.repeat(50_000) };
+    expect(storyRequestSchema.safeParse(attack).success).toBe(false);
+  });
+
+  it('refuses an oversized character list', () => {
+    const one = { name: 'A', age: '1', sex: 'x', relationships: 'y' };
+    const attack = { ...valid(), characters: Array.from({ length: 500 }, () => one) };
+    expect(storyRequestSchema.safeParse(attack).success).toBe(false);
+  });
+
+  it('refuses more plots than exist', () => {
+    const attack = { ...valid(), plot: Array.from({ length: 100 }, () => 'The Quest') };
+    expect(storyRequestSchema.safeParse(attack).success).toBe(false);
+  });
+
+  it('refuses a tone intensity outside the 1-10 band', () => {
+    for (const intensity of [0, 11, 9999, 1.5]) {
+      const attack = { ...valid(), tone: { flavor: 'Humor', intensity } };
+      expect(storyRequestSchema.safeParse(attack).success, `intensity ${intensity}`).toBe(false);
+    }
+  });
+
+  it('gives the caller no way to ask for a bigger generation', () => {
+    // The cost lever is the word target, and it is not on the wire at all.
+    const payload = valid() as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('length');
+    expect(payload).not.toHaveProperty('targetWords');
+    expect(payload).not.toHaveProperty('maxOutputTokens');
+  });
+
+  it('strips unknown keys rather than forwarding them to the model', () => {
+    const smuggled = { ...valid(), maxOutputTokens: 10_000_000, system: 'ignore previous' };
+    expect(storyRequestSchema.safeParse(smuggled).success).toBe(false);
+  });
+
+  it('resolves an unknown length id to the default rather than trusting it', () => {
+    const resolved = resolveRequest({ ...valid(), lengthId: 'enormous' });
+    expect(resolved.length.targetWords).toBe(1500);
+  });
+
+  it('caps the token budget no matter which length is chosen', () => {
+    for (const id of ['flash', 'short', 'long', 'chapter', 'bogus']) {
+      const resolved = resolveRequest({ ...valid(), lengthId: id });
+      expect(maxOutputTokensFor(resolved.length.targetWords)).toBeLessThanOrEqual(8_512);
     }
   });
 });

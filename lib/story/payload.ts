@@ -1,5 +1,15 @@
-import { hasValue, isSet, type StoryConfig, type StoryPayload } from './schema';
+import { hasValue, isSet, type StoryConfig, type StoryPayload, type StoryRequest } from './schema';
 import { lengthById } from './length';
+
+/**
+ * Expand a validated request into the payload handed to the model. The word
+ * target comes from the server's own table, never from the caller.
+ */
+export function resolveRequest(request: StoryRequest): StoryPayload {
+  const { lengthId, ...rest } = request;
+  const length = lengthById(lengthId);
+  return { ...rest, length: { label: length.label, targetWords: length.targetWords } };
+}
 
 /**
  * Compile the console state into the JSON payload the Master Storyteller
@@ -13,16 +23,13 @@ import { lengthById } from './length';
  * but keeping them distinct means the payload records what the user actually
  * decided rather than flattening a choice into an absence.
  */
-export function compilePayload(config: StoryConfig): StoryPayload {
+export function compilePayload(config: StoryConfig): StoryRequest {
   const text = (id: keyof StoryConfig): string => {
     const state = config[id];
     return state.status === 'set' && typeof state.value === 'string' ? state.value.trim() : '';
   };
 
-  const lengthId = isSet(config.length) ? (config.length.value as string) : 'short';
-  const length = lengthById(lengthId);
-
-  const payload: StoryPayload = {
+  const payload: StoryRequest = {
     plot: isSet(config.plots) ? config.plots.value : [],
     setting: { time: text('settingTime'), place: text('settingPlace') },
     isFact: isSet(config.isFact) ? config.isFact.value : false,
@@ -38,7 +45,7 @@ export function compilePayload(config: StoryConfig): StoryPayload {
     perspective: text('perspective'),
     audience: text('audience'),
     pacing: text('pacing'),
-    length: { label: length.label, targetWords: length.targetWords },
+    lengthId: isSet(config.length) ? (config.length.value as string) : 'short',
     genre: text('genre'),
   };
 

@@ -105,10 +105,18 @@ export function useStoryGeneration() {
         }
       }
 
-      // The stream ended without an explicit terminator.
+      // EOF without an explicit `done` means the stream was cut short — a
+      // proxy timeout, a killed server, a dropped connection. Whatever text
+      // arrived is a fragment, so surface it as a failure rather than
+      // presenting (and archiving) a truncated story as a finished one.
       if (!finished) {
-        setState((s) => (s.running ? { ...s, running: false, stage: null, complete: true } : s));
-        finished = true;
+        errored = true;
+        setState((s) => ({
+          ...s,
+          running: false,
+          stage: null,
+          error: 'The story was cut off before it finished. Nothing was saved — try again.',
+        }));
       }
 
       // Archived once per run, outside any state updater so a StrictMode

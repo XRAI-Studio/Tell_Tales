@@ -1,10 +1,11 @@
 import { generateObject, generateText, streamText } from 'ai';
-import { storyPayloadSchema, factCheckSchema, type StoryPayload } from '@/lib/story/schema';
+import { storyRequestSchema, factCheckSchema, type StoryPayload } from '@/lib/story/schema';
 import { MASTER_STORYTELLER_PROMPT, FACT_CHECK_PROMPT, buildRevisionPrompt } from '@/lib/story/prompt';
-import { payloadToUserMessage, temperatureFor } from '@/lib/story/payload';
+import { payloadToUserMessage, resolveRequest, temperatureFor } from '@/lib/story/payload';
 import { maxOutputTokensFor } from '@/lib/story/length';
 import { encodeEvent, type StoryEvent } from '@/lib/story/events';
 import { mockStory, mockFactIssues } from '@/lib/story/mock';
+import { acquireSlot, clientKey, readJsonCapped, PayloadTooLargeError } from '@/lib/server/guards';
 
 /**
  * Any AI Gateway model string. Override with STORY_MODEL in .env.local —
@@ -21,41 +22,33 @@ function isMockMode(): boolean {
   return !process.env.AI_GATEWAY_API_KEY?.trim();
 }
 
+/** Raised when the client goes away mid-generation. */
+class AbortedError extends Error {
+  constructor() {
+    super('Generation cancelled');
+    this.name = 'AbortedError';
+  }
+}
+
+function throwIfAborted(signal: AbortSignal) {
+  if (signal.aborted) throw new AbortedError();
+}
+
 /** Emit buffered text in word-sized chunks so mock mode still animates. */
 async function streamChunks(
   text: string,
   emit: (e: StoryEvent) => void,
+  signal: AbortSignal,
   delayMs = 0,
 ): Promise<void> {
   const chunks = text.match(/\S+\s*/g) ?? [text];
   for (const chunk of chunks) {
+    throwIfAborted(signal);
     emit({ type: 'text', delta: chunk });
     if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
   }
 }
 
-async function runMock(payload: StoryPayload, emit: (e: StoryEvent) => void): Promise<void> {
-  if (payload.isFact) {
-    emit({ type: 'status', stage: 'drafting' });
-    await new Promise((r) => setTimeout(r, 400));
-    emit({ type: 'status', stage: 'fact-checking' });
-    await new Promise((r) => setTimeout(r, 600));
-    const issues = mockFactIssues(payload);
-    if (issues.length) {
-      emit({ type: 'issues', items: issues });
-      emit({ type: 'status', stage: 'revising' });
-      await new Promise((r) => setTimeout(r, 400));
-    }
-  }
-  emit({ type: 'status', stage: 'writing' });
-  await streamChunks(mockStory(payload), emit, 12);
-}
-
-/**
- * streamText reports failures through onError rather than rejecting the
- * textStream iteration, so an unhandled provider error would otherwise look
- * like a successful empty story. Capture it and rethrow once the stream ends.
- */
 type TextRunParams = {
   model: string;
   system: string;
@@ -64,13 +57,20 @@ type TextRunParams = {
   maxOutputTokens: number;
 };
 
+/**
+ * streamText reports failures through onError rather than rejecting the
+ * textStream iteration, so an unhandled provider error would otherwise look
+ * like a successful empty story. Capture it and rethrow once the stream ends.
+ */
 async function streamModelText(
   params: TextRunParams,
   emit: (e: StoryEvent) => void,
+  signal: AbortSignal,
 ): Promise<void> {
   let streamError: unknown = null;
   const result = streamText({
     ...params,
+    abortSignal: signal,
     onError: ({ error }) => {
       streamError = error;
     },
@@ -82,6 +82,9 @@ async function streamModelText(
     emit({ type: 'text', delta });
   }
 
+  // An abort surfaces here as a truncated stream, not as a thrown error.
+  throwIfAborted(signal);
+
   if (streamError) {
     throw streamError instanceof Error ? streamError : new Error(String(streamError));
   }
@@ -90,7 +93,34 @@ async function streamModelText(
   }
 }
 
-async function runFiction(payload: StoryPayload, emit: (e: StoryEvent) => void): Promise<void> {
+async function runMock(
+  payload: StoryPayload,
+  emit: (e: StoryEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  if (payload.isFact) {
+    emit({ type: 'status', stage: 'drafting' });
+    await new Promise((r) => setTimeout(r, 400));
+    throwIfAborted(signal);
+    emit({ type: 'status', stage: 'fact-checking' });
+    await new Promise((r) => setTimeout(r, 600));
+    throwIfAborted(signal);
+    const issues = mockFactIssues(payload);
+    if (issues.length) {
+      emit({ type: 'issues', items: issues });
+      emit({ type: 'status', stage: 'revising' });
+      await new Promise((r) => setTimeout(r, 400));
+    }
+  }
+  emit({ type: 'status', stage: 'writing' });
+  await streamChunks(mockStory(payload), emit, signal, 12);
+}
+
+async function runFiction(
+  payload: StoryPayload,
+  emit: (e: StoryEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
   emit({ type: 'status', stage: 'writing' });
   await streamModelText(
     {
@@ -101,6 +131,7 @@ async function runFiction(payload: StoryPayload, emit: (e: StoryEvent) => void):
       maxOutputTokens: maxOutputTokensFor(payload.length.targetWords),
     },
     emit,
+    signal,
   );
 }
 
@@ -108,8 +139,15 @@ async function runFiction(payload: StoryPayload, emit: (e: StoryEvent) => void):
  * Fact mode (spec §3): draft at low temperature, verify, then revise once if
  * the verifier found anything. The draft cannot stream, because it may still
  * be corrected — hence the status events so the wait stays legible.
+ *
+ * Each stage checks for abort first: without that, cancelling during the draft
+ * would still pay for verification and revision.
  */
-async function runFactChecked(payload: StoryPayload, emit: (e: StoryEvent) => void): Promise<void> {
+async function runFactChecked(
+  payload: StoryPayload,
+  emit: (e: StoryEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
   const maxOutputTokens = maxOutputTokensFor(payload.length.targetWords);
 
   emit({ type: 'status', stage: 'drafting' });
@@ -119,8 +157,10 @@ async function runFactChecked(payload: StoryPayload, emit: (e: StoryEvent) => vo
     prompt: payloadToUserMessage(payload),
     temperature: temperatureFor(true),
     maxOutputTokens,
+    abortSignal: signal,
   });
 
+  throwIfAborted(signal);
   emit({ type: 'status', stage: 'fact-checking' });
   let issues: string[];
   try {
@@ -130,9 +170,12 @@ async function runFactChecked(payload: StoryPayload, emit: (e: StoryEvent) => vo
       system: FACT_CHECK_PROMPT,
       prompt: `Story configuration:\n${payloadToUserMessage(payload)}\n\nNarrative to check:\n---\n${draft.text}\n---`,
       temperature: 0,
+      abortSignal: signal,
     });
     issues = verdict.object.issues ?? [];
-  } catch {
+  } catch (error) {
+    // A cancellation must not be mistaken for a verifier that misbehaved.
+    if (signal.aborted || error instanceof AbortedError) throw new AbortedError();
     // Not every model can hold to a JSON schema. A verifier that fails is no
     // reason to discard a finished draft — hand it over, clearly labelled.
     emit({
@@ -141,13 +184,15 @@ async function runFactChecked(payload: StoryPayload, emit: (e: StoryEvent) => vo
         'This model could not complete the fact-check, so the draft below is unverified. Set STORY_MODEL to a model with structured-output support for the full fact pass.',
     });
     emit({ type: 'status', stage: 'writing' });
-    await streamChunks(draft.text, emit);
+    await streamChunks(draft.text, emit, signal);
     return;
   }
 
+  throwIfAborted(signal);
+
   if (issues.length === 0) {
     emit({ type: 'status', stage: 'writing' });
-    await streamChunks(draft.text, emit);
+    await streamChunks(draft.text, emit, signal);
     return;
   }
 
@@ -162,23 +207,48 @@ async function runFactChecked(payload: StoryPayload, emit: (e: StoryEvent) => vo
       maxOutputTokens,
     },
     emit,
+    signal,
+  );
+}
+
+function reject(status: number, message: string, retryAfterSeconds?: number) {
+  return Response.json(
+    { error: message },
+    {
+      status,
+      headers: retryAfterSeconds ? { 'Retry-After': String(retryAfterSeconds) } : undefined,
+    },
   );
 }
 
 export async function POST(req: Request) {
+  // Claimed before any parsing so a flood of malformed requests is cheap too.
+  const slot = acquireSlot(clientKey(req));
+  if (!slot.ok) {
+    return reject(slot.rejection.status, slot.rejection.message, slot.rejection.retryAfterSeconds);
+  }
+
   let payload: StoryPayload;
   try {
-    const parsed = storyPayloadSchema.safeParse(await req.json());
+    const parsed = storyRequestSchema.safeParse(await readJsonCapped(req));
     if (!parsed.success) {
+      slot.release();
       return Response.json(
         { error: 'Invalid story configuration', issues: parsed.error.issues },
         { status: 400 },
       );
     }
-    payload = parsed.data;
-  } catch {
-    return Response.json({ error: 'Malformed request body' }, { status: 400 });
+    payload = resolveRequest(parsed.data);
+  } catch (error) {
+    slot.release();
+    if (error instanceof PayloadTooLargeError) {
+      return reject(413, 'That story configuration is too large.');
+    }
+    return reject(400, 'Malformed request body');
   }
+
+  // Fires when the client disconnects, so generation stops with them.
+  const signal = req.signal;
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
@@ -191,20 +261,31 @@ export async function POST(req: Request) {
 
       try {
         if (isMockMode()) {
-          await runMock(payload, emit);
+          await runMock(payload, emit, signal);
         } else if (payload.isFact) {
-          await runFactChecked(payload, emit);
+          await runFactChecked(payload, emit, signal);
         } else {
-          await runFiction(payload, emit);
+          await runFiction(payload, emit, signal);
         }
         emit({ type: 'done' });
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Story generation failed';
-        emit({ type: 'error', message });
+        // A cancelled run has no one listening; emitting would only throw.
+        if (!(error instanceof AbortedError) && !signal.aborted) {
+          const message = error instanceof Error ? error.message : 'Story generation failed';
+          emit({ type: 'error', message });
+        }
       } finally {
         closed = true;
-        controller.close();
+        slot.release();
+        try {
+          controller.close();
+        } catch {
+          // Already closed by the client disconnecting.
+        }
       }
+    },
+    cancel() {
+      slot.release();
     },
   });
 

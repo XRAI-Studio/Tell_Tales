@@ -6,6 +6,7 @@ import {
   clearHistory,
   getHistoryServerSnapshot,
   getHistorySnapshot,
+  lengthLabelFor,
   removeStory,
   subscribeHistory,
   type StoryRecord,
@@ -58,7 +59,7 @@ export function StoryHistory() {
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-legend">{story.title}</p>
                 <p className="font-data text-[0.7rem] text-legend-faint">
-                  {when(story.createdAt)} · {story.payload.length.label}
+                  {when(story.createdAt)} · {lengthLabelFor(story)}
                   {story.payload.isFact ? ' · fact' : ''}
                 </p>
               </div>

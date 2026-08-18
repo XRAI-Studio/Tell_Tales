@@ -1,11 +1,13 @@
-import type { StoryConfig, StoryPayload } from '@/lib/story/schema';
+import { lengthById } from '@/lib/story/length';
+import type { StoryConfig, StoryRequest } from '@/lib/story/schema';
 
 export type StoryRecord = {
   id: string;
   createdAt: number;
   title: string;
   config: StoryConfig;
-  payload: StoryPayload;
+  /** The request exactly as sent, so a past run is reproducible. */
+  payload: StoryRequest;
   text: string;
 };
 
@@ -60,14 +62,14 @@ export function getHistoryServerSnapshot(): StoryRecord[] {
 }
 
 /** A short human label: what the story was, not when it was stored. */
-export function titleFor(payload: StoryPayload): string {
+export function titleFor(payload: StoryRequest): string {
   const parts = [payload.genre, payload.plot[0]].filter(Boolean);
   return parts.length ? parts.join(' · ') : 'Untitled story';
 }
 
 export function saveStory(input: {
   config: StoryConfig;
-  payload: StoryPayload;
+  payload: StoryRequest;
   text: string;
 }): void {
   const record: StoryRecord = {
@@ -83,6 +85,22 @@ export function removeStory(id: string): void {
   write(getHistorySnapshot().filter((r) => r.id !== id));
 }
 
+/** Display label for a stored run, resolved from the id it was sent with. */
+export function lengthLabelFor(record: StoryRecord): string {
+  return lengthById(record.payload.lengthId).label;
+}
+
 export function clearHistory(): void {
   write([]);
+}
+
+/** Test seam: drop the in-memory cache along with the stored list. */
+export function __resetForTests(): void {
+  cache = null;
+  listeners.clear();
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Nothing to clear.
+  }
 }

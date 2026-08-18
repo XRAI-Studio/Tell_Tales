@@ -69,33 +69,56 @@ export type StoryConfig = {
 
 export type FieldId = keyof StoryConfig;
 
-/** Wire format sent to the model. Key names mirror the Master Storyteller prompt. */
+/**
+ * What a client is allowed to send.
+ *
+ * Every field is bounded. The endpoint spends real money per call, so an
+ * unbounded string or array here is a direct cost-amplification lever for
+ * anyone posting to the route without going through the UI.
+ *
+ * Note what is *absent*: the client cannot specify a word target or token
+ * budget. It picks a length by id and the server resolves the cost, so the
+ * caller never gets to choose how large a generation it is buying.
+ */
 export const characterPayloadSchema = z.object({
-  name: z.string(),
-  age: z.string(),
-  sex: z.string(),
-  relationships: z.string(),
+  name: z.string().max(120),
+  age: z.string().max(40),
+  sex: z.string().max(60),
+  relationships: z.string().max(400),
 });
 
-export const storyPayloadSchema = z.object({
-  plot: z.array(z.string()).min(1),
-  setting: z.object({ time: z.string(), place: z.string() }),
-  isFact: z.boolean(),
-  characters: z.array(characterPayloadSchema),
-  conflict: z.string(),
-  theme: z.string(),
-  tone: z.object({ flavor: z.string(), intensity: z.number().min(1).max(10) }),
-  perspective: z.string(),
-  audience: z.string(),
-  pacing: z.string(),
-  length: z.object({ label: z.string(), targetWords: z.number() }),
-  genre: z.string(),
-  tropes: z.array(z.string()).nullable().optional(),
-  style: z.string().nullable().optional(),
-  formatting: z.string().nullable().optional(),
-});
+export const storyRequestSchema = z
+  .object({
+    plot: z.array(z.string().max(120)).min(1).max(7),
+    setting: z.object({ time: z.string().max(400), place: z.string().max(400) }),
+    isFact: z.boolean(),
+    characters: z.array(characterPayloadSchema).max(20),
+    conflict: z.string().max(2000),
+    theme: z.string().max(2000),
+    tone: z.object({
+      flavor: z.string().max(60),
+      intensity: z.number().int().min(1).max(10),
+    }),
+    perspective: z.string().max(120),
+    audience: z.string().max(200),
+    pacing: z.string().max(60),
+    lengthId: z.string().max(40),
+    genre: z.string().max(200),
+    tropes: z.array(z.string().max(200)).max(20).nullable().optional(),
+    style: z.string().max(600).nullable().optional(),
+    formatting: z.string().max(120).nullable().optional(),
+  })
+  .strict();
 
-export type StoryPayload = z.infer<typeof storyPayloadSchema>;
+export type StoryRequest = z.infer<typeof storyRequestSchema>;
+
+/**
+ * What the model is given: the request with the length resolved server-side
+ * into the label and word target the Master Storyteller prompt expects.
+ */
+export type StoryPayload = Omit<StoryRequest, 'lengthId'> & {
+  length: { label: string; targetWords: number };
+};
 
 /** Structured result of the fact-check pass. */
 export const factCheckSchema = z.object({

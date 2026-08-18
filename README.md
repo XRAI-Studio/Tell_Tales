@@ -72,7 +72,40 @@ structured issues and they are shown alongside the finished story.
 **The system prompt** in [lib/story/prompt.ts](lib/story/prompt.ts) is reproduced verbatim from the
 product spec and should not be paraphrased — there are tests asserting its sections survive.
 
+## Before you deploy this
+
+The generation route spends real money per call, and the app has no user accounts. It is safe to run
+locally as-is; **exposing it publicly needs more than what ships here.**
+
+What is already in place ([lib/server/guards.ts](lib/server/guards.ts)):
+
+- Per-IP sliding-window request limit and concurrency cap, plus a global concurrency cap.
+- A 64 KB request body ceiling, enforced before the JSON is parsed.
+- A strict, fully bounded request schema — every string and array has a maximum.
+- **The caller cannot choose how large a generation it buys.** The client sends a `lengthId`; the
+  server resolves the word target and token budget from its own table. No cost parameter is on the
+  wire.
+- Cancellation propagates: closing the tab or pressing Stop aborts every model call, including the
+  later stages of the fact pipeline. Measured, an aborted run ends in ~180 ms against ~13 s for a
+  full one.
+
+What is **not** solved, and would matter in production:
+
+- The rate limiter holds state per process. Across several serverless instances the effective limit
+  is roughly (limit × instances). It raises the cost of abuse; it is not a hard ceiling. Durable
+  counters (Redis, or a KV store from the Vercel Marketplace) are the real fix.
+- There is no authentication. Anyone who can reach the URL can spend your credits within the rate
+  limit. Put the route behind real auth, or behind Vercel deployment protection, before making it
+  public.
+- Client identity comes from `x-forwarded-for`, which is spoofable. That is why these are rate
+  limits and not authorization.
+
+Tunable via env: `STORY_RATE_LIMIT`, `STORY_RATE_WINDOW_MS`, `STORY_MAX_CONCURRENT`,
+`STORY_MAX_CONCURRENT_GLOBAL`, `STORY_MAX_BODY_BYTES`.
+
 ## Notes
 
 - Dictation uses the Web Speech API. The mic button is only rendered where the browser supports it.
 - Your in-progress config is saved to localStorage and restored on reload.
+- A stream that ends without an explicit terminator is treated as a failure, not a finished story —
+  a truncated run is surfaced as an error and never archived.

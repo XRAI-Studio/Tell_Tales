@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { encodeEvent, parseEvents, STAGE_LABELS, type StoryEvent } from './events';
 import { mockStory } from './mock';
-import { compilePayload } from './payload';
+import { compilePayload, resolveRequest } from './payload';
 import { setValue, type StoryConfig } from './schema';
 import { initialConfig } from '@/lib/state/story-reducer';
 
@@ -71,19 +71,21 @@ describe('mockStory', () => {
   };
 
   it('reflects the compiled payload, so a keyless run still proves the knobs wired through', () => {
-    const text = mockStory(compilePayload(config));
+    const text = mockStory(resolveRequest(compilePayload(config)));
     for (const fragment of ['1920s', 'A quiet cabin', 'The Quest', 'Wren', 'The map is wrong', 'Adventure']) {
       expect(text).toContain(fragment);
     }
   });
 
   it('says plainly that no model was called', () => {
-    expect(mockStory(compilePayload(config))).toContain('MOCK STORY');
+    expect(mockStory(resolveRequest(compilePayload(config)))).toContain('MOCK STORY');
   });
 
   it('describes the intensity band it was given', () => {
-    expect(mockStory(compilePayload(config))).toContain('drowned out everything else');
-    const subtle = mockStory(compilePayload({ ...config, tone: setValue({ flavor: 'Humor', intensity: 2 }) }));
+    expect(mockStory(resolveRequest(compilePayload(config)))).toContain('drowned out everything else');
+    const subtle = mockStory(
+      resolveRequest(compilePayload({ ...config, tone: setValue({ flavor: 'Humor', intensity: 2 }) })),
+    );
     expect(subtle).toContain('background hum');
   });
 });
