@@ -32,7 +32,10 @@ export const metadata: Metadata = {
   description: 'A console for building any story, one knob at a time.',
 };
 
-export default function RootLayout({ children }: LayoutProps<'/'>) {
+// Typed explicitly rather than with Next's generated `LayoutProps<'/'>`, which
+// only exists after a build has written .next/types — so a clean clone would
+// otherwise fail to typecheck.
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="en"
