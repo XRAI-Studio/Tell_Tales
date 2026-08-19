@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { Play, Shuffle, Trash2 } from 'lucide-react';
 import { UserButton } from '@clerk/nextjs';
 import { clerkAppearance } from '@/lib/clerk-appearance';
+import { requireAuth } from '@/lib/auth-mode';
 import { StoryProvider, useStory } from '@/lib/state/story-context';
 import { FIELDS, FIELD_GROUPS, MANDATORY_FIELDS } from '@/lib/story/fields';
 import { missingMandatory } from '@/lib/story/validate';
@@ -86,7 +87,7 @@ function Console() {
               <Trash2 className="h-3.5 w-3.5" />
               Clear
             </button>
-            <UserButton appearance={clerkAppearance} />
+            {requireAuth() ? <UserButton appearance={clerkAppearance} /> : null}
           </div>
         </div>
       </header>

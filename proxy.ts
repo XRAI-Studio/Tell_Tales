@@ -1,4 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
+import { requireAuth } from '@/lib/auth-mode';
 
 /**
  * Next.js 16 renamed Middleware to Proxy; the file must be `proxy.ts` at the
@@ -13,6 +14,10 @@ const isPublic = createRouteMatcher(['/sign-in(.*)', '/sign-up(.*)']);
 const isApi = createRouteMatcher(['/api(.*)']);
 
 export default clerkMiddleware(async (auth, req) => {
+  // clerkMiddleware always runs so auth() stays available downstream; only the
+  // gate is conditional. In public mode nothing is protected.
+  if (!requireAuth()) return;
+
   if (isPublic(req)) return;
 
   // API routes are deliberately not redirected. `auth.protect()` answers with a

@@ -3,5 +3,7 @@
   "title": "Tell Tales",
   "description": "A console for building any story — set the plot, cast, tone and pacing, or let the machine roll them for you.",
   "owner": "scott",
+  "liveUrl": "https://tell-tales-ruby.vercel.app",
+  "embeddable": true,
   "accent": "#f2a93b"
 }

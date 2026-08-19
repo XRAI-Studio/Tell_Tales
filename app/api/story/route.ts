@@ -8,6 +8,7 @@ import { mockStory, mockFactIssues } from '@/lib/story/mock';
 import { assertCleanFinish, type FinishReasonLike } from '@/lib/story/finish';
 import { acquireSlot, clientKey, readJsonCapped, PayloadTooLargeError } from '@/lib/server/guards';
 import { auth } from '@clerk/nextjs/server';
+import { requireAuth } from '@/lib/auth-mode';
 
 /**
  * Any AI Gateway model string. Override with STORY_MODEL in .env.local —
@@ -237,7 +238,7 @@ export async function POST(req: Request) {
   // Checked here as well as in the proxy: a proxy is an optimistic gate, not
   // an authorization boundary, and this is the call that spends money.
   const { userId } = await auth();
-  if (!userId) {
+  if (requireAuth() && !userId) {
     return reject(401, 'Sign in to tell a story.');
   }
 
