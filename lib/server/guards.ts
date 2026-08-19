@@ -35,12 +35,24 @@ const windows = new Map<string, Window>();
 const concurrentByClient = new Map<string, number>();
 let concurrentGlobal = 0;
 
-/** Keep the map from growing without bound under changing client keys. */
+/**
+ * Hard ceiling on tracked clients. Client keys come from a spoofable header,
+ * so an attacker rotating it creates a new entry every request. Sweeping only
+ * expired entries is not enough — inside a single window none have expired yet,
+ * and the map grows unbounded.
+ */
+const MAX_TRACKED_CLIENTS = numberFromEnv('STORY_MAX_TRACKED_CLIENTS', 10_000);
+
 function sweep(now: number) {
-  if (windows.size < 5_000) return;
+  if (windows.size < MAX_TRACKED_CLIENTS) return;
   for (const [key, window] of windows) {
     if (window.resetAt <= now) windows.delete(key);
   }
+}
+
+/** True when the table is full of live entries and cannot take a new key. */
+function atClientCapacity(key: string): boolean {
+  return windows.size >= MAX_TRACKED_CLIENTS && !windows.has(key);
 }
 
 /**
@@ -62,6 +74,20 @@ export type GuardRejection = { status: number; message: string; retryAfterSecond
 export function acquireSlot(key: string): { ok: true; release: () => void } | { ok: false; rejection: GuardRejection } {
   const now = Date.now();
   sweep(now);
+
+  // Fail closed rather than let a key-rotating caller exhaust memory. Clients
+  // already being tracked are unaffected, so this sheds the attack, not users
+  // mid-session.
+  if (atClientCapacity(key)) {
+    return {
+      ok: false,
+      rejection: {
+        status: 503,
+        message: 'The storyteller is at capacity right now. Try again shortly.',
+        retryAfterSeconds: 30,
+      },
+    };
+  }
 
   const window = windows.get(key);
   if (!window || window.resetAt <= now) {

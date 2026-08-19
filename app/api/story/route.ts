@@ -5,6 +5,7 @@ import { payloadToUserMessage, resolveRequest, temperatureFor } from '@/lib/stor
 import { maxOutputTokensFor } from '@/lib/story/length';
 import { encodeEvent, type StoryEvent } from '@/lib/story/events';
 import { mockStory, mockFactIssues } from '@/lib/story/mock';
+import { assertCleanFinish, type FinishReasonLike } from '@/lib/story/finish';
 import { acquireSlot, clientKey, readJsonCapped, PayloadTooLargeError } from '@/lib/server/guards';
 
 /**
@@ -66,6 +67,7 @@ async function streamModelText(
   params: TextRunParams,
   emit: (e: StoryEvent) => void,
   signal: AbortSignal,
+  stage = 'story',
 ): Promise<void> {
   let streamError: unknown = null;
   const result = streamText({
@@ -91,6 +93,9 @@ async function streamModelText(
   if (produced === 0) {
     throw new Error('The model returned an empty response.');
   }
+
+  // Checked last: text arriving is not proof the model finished saying it.
+  assertCleanFinish((await result.finishReason) as FinishReasonLike, stage);
 }
 
 async function runMock(
@@ -132,6 +137,7 @@ async function runFiction(
     },
     emit,
     signal,
+    'story',
   );
 }
 
@@ -161,6 +167,10 @@ async function runFactChecked(
   });
 
   throwIfAborted(signal);
+  // Verify nothing until the draft is known to be whole; a truncated draft
+  // would otherwise be fact-checked, revised, and archived as a real story.
+  assertCleanFinish(draft.finishReason as FinishReasonLike, 'draft');
+
   emit({ type: 'status', stage: 'fact-checking' });
   let issues: string[];
   try {
@@ -208,6 +218,7 @@ async function runFactChecked(
     },
     emit,
     signal,
+    'revision',
   );
 }
 

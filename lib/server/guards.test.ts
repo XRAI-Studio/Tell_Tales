@@ -120,3 +120,35 @@ describe('readJsonCapped', () => {
     await expect(readJsonCapped(request('{ not json'))).rejects.toBeInstanceOf(SyntaxError);
   });
 });
+
+describe('client table capacity', () => {
+  beforeEach(() => __resetGuards());
+
+  it('sheds new keys once the table is full instead of growing without bound', () => {
+    const cap = 10_000;
+    // Simulate a caller rotating x-forwarded-for on every request.
+    let lastOk = 0;
+    for (let i = 0; i < cap + 50; i += 1) {
+      const slot = acquireSlot(`rotating-${i}`);
+      if (slot.ok) {
+        slot.release();
+        lastOk = i;
+      }
+    }
+    // Admission stopped well before the final rotated key.
+    expect(lastOk).toBeLessThan(cap + 50);
+    const overflow = acquireSlot('rotating-brand-new');
+    expect(overflow.ok).toBe(false);
+    if (!overflow.ok) expect(overflow.rejection.status).toBe(503);
+  });
+
+  it('still serves a client already in the table when at capacity', () => {
+    for (let i = 0; i < 10_050; i += 1) {
+      const slot = acquireSlot(`rotating-${i}`);
+      if (slot.ok) slot.release();
+    }
+    // An established key is not shed, because it needs no new entry.
+    const known = acquireSlot('rotating-0');
+    expect(known.ok).toBe(true);
+  });
+});
