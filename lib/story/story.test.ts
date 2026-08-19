@@ -82,8 +82,26 @@ describe('length', () => {
   });
 
   it('allots more tokens than words, with headroom', () => {
-    expect(maxOutputTokensFor(1500)).toBe(Math.ceil(1500 * 1.6) + 512);
     expect(maxOutputTokensFor(500)).toBeGreaterThan(500);
+    expect(maxOutputTokensFor(3000)).toBeGreaterThan(maxOutputTokensFor(1500));
+  });
+
+  it('leaves room for the model overshooting the requested word count', () => {
+    // Measured: asked for 500 words the model writes ~715 at ~1.8 tokens/word,
+    // i.e. ~1290 tokens. The original 1312-token budget made truncation a coin
+    // flip, so every length must clear its realistic need with margin.
+    for (const option of LENGTH_OPTIONS) {
+      const realisticNeed = option.targetWords * 1.45 * 1.8;
+      expect(
+        maxOutputTokensFor(option.targetWords),
+        `${option.label} budget is too tight`,
+      ).toBeGreaterThan(realisticNeed * 1.15);
+    }
+  });
+
+  it('would have caught the run that actually truncated in production', () => {
+    // 706 words of prose came to 1312 tokens and hit the old ceiling exactly.
+    expect(maxOutputTokensFor(500)).toBeGreaterThan(1312);
   });
 });
 
@@ -312,9 +330,12 @@ describe('storyRequestSchema bounds', () => {
   });
 
   it('caps the token budget no matter which length is chosen', () => {
+    // The ceiling is whatever the largest offered length costs — the point is
+    // that no lengthId, including an unknown one, can exceed the table.
+    const largest = Math.max(...LENGTH_OPTIONS.map((o) => maxOutputTokensFor(o.targetWords)));
     for (const id of ['flash', 'short', 'long', 'chapter', 'bogus']) {
       const resolved = resolveRequest({ ...valid(), lengthId: id });
-      expect(maxOutputTokensFor(resolved.length.targetWords)).toBeLessThanOrEqual(8_512);
+      expect(maxOutputTokensFor(resolved.length.targetWords)).toBeLessThanOrEqual(largest);
     }
   });
 });

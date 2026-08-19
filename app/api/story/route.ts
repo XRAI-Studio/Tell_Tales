@@ -5,7 +5,7 @@ import { payloadToUserMessage, resolveRequest, temperatureFor } from '@/lib/stor
 import { maxOutputTokensFor } from '@/lib/story/length';
 import { encodeEvent, type StoryEvent } from '@/lib/story/events';
 import { mockStory, mockFactIssues } from '@/lib/story/mock';
-import { assertCleanFinish, type FinishReasonLike } from '@/lib/story/finish';
+import { assertCleanFinish, TruncatedGenerationError, type FinishReasonLike } from '@/lib/story/finish';
 import { acquireSlot, clientKey, readJsonCapped, PayloadTooLargeError } from '@/lib/server/guards';
 import { auth } from '@clerk/nextjs/server';
 import { requireAuth } from '@/lib/auth-mode';
@@ -291,8 +291,22 @@ export async function POST(req: Request) {
         emit({ type: 'done' });
       } catch (error) {
         // A cancelled run has no one listening; emitting would only throw.
-        if (!(error instanceof AbortedError) && !signal.aborted) {
-          const message = error instanceof Error ? error.message : 'Story generation failed';
+        if (error instanceof AbortedError || signal.aborted) {
+          // nothing to say to a client that has gone away
+        } else if (error instanceof TruncatedGenerationError) {
+          // The text already streamed. Discarding it would throw away a story
+          // the reader waited for, so label it instead of losing it — the
+          // failure this guards against is a truncated story presented as
+          // *complete*, and a notice is exactly what prevents that.
+          emit({ type: 'notice', message: error.message });
+          emit({ type: 'done' });
+        } else {
+          const raw = error instanceof Error ? error.message : 'Story generation failed';
+          // The gateway's own rate-limit copy talks about credits and tiers,
+          // which means nothing to someone who just wanted a story.
+          const message = /rate.?limit|429/i.test(raw)
+            ? 'The storyteller needs a moment — this model limits how often it can be asked. Try again in a minute.'
+            : raw;
           emit({ type: 'error', message });
         }
       } finally {
