@@ -17,18 +17,37 @@ function request(body: string, headers: Record<string, string> = {}): Request {
 }
 
 describe('clientKey', () => {
-  it('prefers the first hop of x-forwarded-for', () => {
+  it('prefers an authenticated user id over anything in the request', () => {
+    // The whole point: a signed-in caller cannot rotate their own limit key.
+    const spoofed = new Request('http://localhost/', {
+      headers: { 'x-forwarded-for': '203.0.113.5', 'x-real-ip': '198.51.100.9' },
+    });
+    expect(clientKey(spoofed, 'user_abc')).toBe('user:user_abc');
+  });
+
+  it('cannot collide a user key with an IP key', () => {
+    const req = new Request('http://localhost/', { headers: { 'x-forwarded-for': 'user_abc' } });
+    expect(clientKey(req)).not.toBe(clientKey(req, 'user_abc'));
+  });
+
+  it('falls back to the first hop of x-forwarded-for when anonymous', () => {
     const req = new Request('http://localhost/', {
       headers: { 'x-forwarded-for': '203.0.113.5, 70.41.3.18' },
     });
-    expect(clientKey(req)).toBe('203.0.113.5');
+    expect(clientKey(req)).toBe('ip:203.0.113.5');
   });
 
   it('falls back to x-real-ip, then to a constant', () => {
     expect(clientKey(new Request('http://localhost/', { headers: { 'x-real-ip': '198.51.100.9' } }))).toBe(
-      '198.51.100.9',
+      'ip:198.51.100.9',
     );
-    expect(clientKey(new Request('http://localhost/'))).toBe('unknown');
+    expect(clientKey(new Request('http://localhost/'))).toBe('ip:unknown');
+  });
+
+  it('treats an empty or null user id as anonymous', () => {
+    const req = new Request('http://localhost/', { headers: { 'x-real-ip': '198.51.100.9' } });
+    expect(clientKey(req, null)).toBe('ip:198.51.100.9');
+    expect(clientKey(req, '')).toBe('ip:198.51.100.9');
   });
 });
 

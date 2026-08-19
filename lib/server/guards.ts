@@ -56,13 +56,19 @@ function atClientCapacity(key: string): boolean {
 }
 
 /**
- * Best-effort client identity. Spoofable via headers, which is precisely why
- * this is a rate limit and not an authorization check.
+ * Client identity for rate limiting, strongest source first.
+ *
+ * An authenticated user id is trustworthy: it comes from a verified session,
+ * not from the request, so a caller cannot rotate it to reset their own limit.
+ * The IP headers are a fallback for unauthenticated paths and *are* spoofable,
+ * which is why the client table is also size-capped.
  */
-export function clientKey(req: Request): string {
+export function clientKey(req: Request, userId?: string | null): string {
+  if (userId) return `user:${userId}`;
   const forwarded = req.headers.get('x-forwarded-for');
-  if (forwarded) return forwarded.split(',')[0].trim();
-  return req.headers.get('x-real-ip') ?? 'unknown';
+  if (forwarded) return `ip:${forwarded.split(',')[0].trim()}`;
+  const realIp = req.headers.get('x-real-ip');
+  return realIp ? `ip:${realIp}` : 'ip:unknown';
 }
 
 export type GuardRejection = { status: number; message: string; retryAfterSeconds?: number };

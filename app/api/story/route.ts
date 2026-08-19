@@ -7,6 +7,7 @@ import { encodeEvent, type StoryEvent } from '@/lib/story/events';
 import { mockStory, mockFactIssues } from '@/lib/story/mock';
 import { assertCleanFinish, type FinishReasonLike } from '@/lib/story/finish';
 import { acquireSlot, clientKey, readJsonCapped, PayloadTooLargeError } from '@/lib/server/guards';
+import { auth } from '@clerk/nextjs/server';
 
 /**
  * Any AI Gateway model string. Override with STORY_MODEL in .env.local —
@@ -233,8 +234,16 @@ function reject(status: number, message: string, retryAfterSeconds?: number) {
 }
 
 export async function POST(req: Request) {
-  // Claimed before any parsing so a flood of malformed requests is cheap too.
-  const slot = acquireSlot(clientKey(req));
+  // Checked here as well as in the proxy: a proxy is an optimistic gate, not
+  // an authorization boundary, and this is the call that spends money.
+  const { userId } = await auth();
+  if (!userId) {
+    return reject(401, 'Sign in to tell a story.');
+  }
+
+  // Keyed on the verified user id, so the limit cannot be reset by rotating a
+  // request header. Claimed before parsing so malformed floods stay cheap.
+  const slot = acquireSlot(clientKey(req, userId));
   if (!slot.ok) {
     return reject(slot.rejection.status, slot.rejection.message, slot.rejection.retryAfterSeconds);
   }
