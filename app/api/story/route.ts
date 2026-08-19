@@ -19,6 +19,18 @@ import { requireAuth } from '@/lib/auth-mode';
  */
 const MODEL = process.env.STORY_MODEL?.trim() || 'openai/gpt-oss-120b';
 
+/**
+ * The verifier is a different job from the storyteller, so it gets its own
+ * model. Perplexity's Sonar searches the web as it answers, which is what the
+ * spec's "fact-checking validation step" actually needs — a storyteller model
+ * can only check a claim against what it happens to remember.
+ *
+ * It also has to hold to a JSON schema, which the default storyteller model
+ * cannot: gpt-oss-120b fails generateObject outright, which is why fact mode
+ * used to come back unverified.
+ */
+const FACT_CHECK_MODEL = process.env.FACT_CHECK_MODEL?.trim() || 'perplexity/sonar';
+
 export const maxDuration = 300;
 
 function isMockMode(): boolean {
@@ -177,7 +189,7 @@ async function runFactChecked(
   let issues: string[];
   try {
     const verdict = await generateObject({
-      model: MODEL,
+      model: FACT_CHECK_MODEL,
       schema: factCheckSchema,
       system: FACT_CHECK_PROMPT,
       prompt: `Story configuration:\n${payloadToUserMessage(payload)}\n\nNarrative to check:\n---\n${draft.text}\n---`,
@@ -193,7 +205,7 @@ async function runFactChecked(
     emit({
       type: 'notice',
       message:
-        'This model could not complete the fact-check, so the draft below is unverified. Set STORY_MODEL to a model with structured-output support for the full fact pass.',
+        'The fact-check could not be completed, so the draft below is unverified. It may be a temporary rate limit — try again shortly, or set FACT_CHECK_MODEL to another search-capable model.',
     });
     emit({ type: 'status', stage: 'writing' });
     await streamChunks(draft.text, emit, signal);

@@ -35,14 +35,22 @@ Ensure the vocabulary, thematic complexity, and maturity of the content are perf
 *   Do not explain your creative choices. 
 *   Output ONLY the generated story following the requested formatting.`;
 
-/** Verification pass, used only when `isFact` is true. */
+/**
+ * Verification pass, used only when `isFact` is true.
+ *
+ * Run against a search-capable model, so it is written to send the verifier
+ * looking things up rather than recalling them — checking dates, people and
+ * events against sources is the whole reason this pass exists.
+ */
 export const FACT_CHECK_PROMPT = `You are a rigorous fact-checker reviewing a non-fiction narrative.
 
-The story below was generated under a strict factual-accuracy constraint. Identify any claim that is historically false, anachronistic, physically impossible, or presented as established fact while actually being invented.
+The story below was generated under a strict factual-accuracy constraint. Search for and verify the specific, checkable claims it makes — dates, places, named people, events, technologies, and the order in which things happened. Do not rely on recollection where a source can settle it.
+
+Identify any claim that is historically false, anachronistic, physically impossible, or presented as established fact while actually being invented.
 
 Judge only verifiable claims. Ordinary narrative craft is not an error: invented dialogue, interior thoughts, sensory detail, scene framing, and composite minor characters are acceptable so long as they do not assert something untrue about the real world.
 
-Return an empty issues array if the narrative is sound.`;
+State each issue concretely: what the narrative claims, and what is actually the case. Return an empty issues array if the narrative is sound.`;
 
 /** Applied to the draft when the verification pass finds problems. */
 export function buildRevisionPrompt(draft: string, issues: string[]): string {

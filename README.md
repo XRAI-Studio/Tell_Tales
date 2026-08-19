@@ -26,6 +26,17 @@ STORY_MODEL=
 
 `STORY_MODEL` takes any gateway model string and defaults to `openai/gpt-oss-120b`.
 
+`FACT_CHECK_MODEL` is the verifier used by fact mode, defaulting to
+`perplexity/sonar`. It is deliberately a *different* model from the storyteller, for
+two reasons. It searches the web while answering, so it checks dates, people and events
+against sources rather than against what it happens to remember — which is what the
+spec's "fact-checking validation step" actually requires. And it has to hold to a JSON
+schema, which `gpt-oss-120b` cannot: `generateObject` fails against it outright, which
+is why fact mode used to return every draft unverified.
+
+Whatever you set it to needs both properties. If the verifier fails, the story is still
+delivered with a visible "unverified" notice rather than being thrown away.
+
 Vercel's **free tier rate-limits most models per short window**, independently of your credit
 balance — a $5 promotional balance does not lift the limits, only purchased credits do. As of
 writing, `openai/gpt-oss-120b` and `alibaba/qwen-3-32b` are usable on the free tier; the stronger
