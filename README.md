@@ -46,11 +46,11 @@ Two consequences worth knowing:
 
 - If you hit a 429, it clears on its own in a couple of minutes. The app shows the gateway's own
   message rather than hiding it.
-- Fact mode makes three model calls — draft, verify, revise — where fiction makes one, and the
-  verify call is a web search. That is three chances to meet a rate limit, so fact mode is the
-  first thing to feel unreliable on the free tier. It fails soft either way: if the verifier cannot
-  complete, you get the draft with a visible notice that it is unverified rather than losing the
-  story.
+- Fact mode makes up to three model calls — draft, verify, and a revise pass only if the verifier
+  found something — where fiction makes one, and the verify call is a web search. That is two or
+  three chances to meet a rate limit, so fact mode is the first thing to feel unreliable on the
+  free tier. It fails soft either way: if the verifier cannot complete, you get the draft with a
+  visible notice that it is unverified rather than losing the story.
 
 ```bash
 npm test          # 107 unit tests over the pure logic
@@ -143,5 +143,10 @@ Tunable via env: `STORY_RATE_LIMIT`, `STORY_RATE_WINDOW_MS`, `STORY_MAX_CONCURRE
 
 - Dictation uses the Web Speech API. The mic button is only rendered where the browser supports it.
 - Your in-progress config is saved to localStorage and restored on reload.
-- A stream that ends without an explicit terminator is treated as a failure, not a finished story —
-  a truncated run is surfaced as an error and never archived.
+- A stream that ends without an explicit terminator — a proxy timeout, a killed server, a dropped
+  connection — is treated as a failure rather than a finished story: whatever text arrived is a
+  fragment, so it is surfaced as an error and nothing is archived.
+- A story the *model* cut short is the other case, and it fails soft. It arrives, and is archived,
+  carrying a visible notice that it ran past the length limit — throwing away a story the reader
+  waited for is the worse outcome, and the failure worth guarding against is a truncated story
+  presented as complete.
