@@ -46,12 +46,14 @@ Two consequences worth knowing:
 
 - If you hit a 429, it clears on its own in a couple of minutes. The app shows the gateway's own
   message rather than hiding it.
-- Free-tier models often can't hold to a JSON schema, so the fact-check pass may not run. The app
-  fails soft here: you get the draft with a visible notice that it is unverified, rather than losing
-  the story. Set `STORY_MODEL=anthropic/claude-sonnet-5` (with credits) for the full fact pass.
+- Fact mode makes three model calls — draft, verify, revise — where fiction makes one, and the
+  verify call is a web search. That is three chances to meet a rate limit, so fact mode is the
+  first thing to feel unreliable on the free tier. It fails soft either way: if the verifier cannot
+  complete, you get the draft with a visible notice that it is unverified rather than losing the
+  story.
 
 ```bash
-npm test          # 52 unit tests over the pure logic
+npm test          # 107 unit tests over the pure logic
 npm run build     # production build
 npx eslint .      # lint
 ```
@@ -85,8 +87,8 @@ product spec and should not be paraphrased — there are tests asserting its sec
 
 ## Before you deploy this
 
-The generation route spends real money per call, and the app has no user accounts. It is safe to run
-locally as-is; **exposing it publicly needs more than what ships here.**
+The generation route spends real money per call. It is safe to run locally as-is; **exposing it
+publicly needs more than what ships here.**
 
 What is already in place ([lib/server/guards.ts](lib/server/guards.ts)):
 
@@ -100,16 +102,39 @@ What is already in place ([lib/server/guards.ts](lib/server/guards.ts)):
   later stages of the fact pipeline. Measured, an aborted run ends in ~180 ms against ~13 s for a
   full one.
 
+### The login is built, and currently switched off
+
+A full Clerk layer ships here: [proxy.ts](proxy.ts) gates the pages, the generation route checks
+`auth()` for itself, and the rate limiter keys on the verified user id when there is one. It sits
+behind `NEXT_PUBLIC_REQUIRE_AUTH`, which defaults to **off**, because the deployed app runs publicly
+inside an iframe on an apps site where no session carries across the boundary.
+
+Turning it back on is **not** just the one env var, despite what the flag's name suggests. Clerk
+development keys (`pk_test_...`) only work on localhost; pointed at a real domain they make
+`auth.protect()` rewrite to a 404 with `X-Clerk-Auth-Reason: dev-browser-missing`. The whole
+sequence is:
+
+1. Put the app on a custom domain whose DNS you control.
+2. Create a Clerk **production** instance for that domain and add the DNS records it asks for.
+3. Swap the Vercel environment to the production keys (`pk_live_...` / `sk_live_...`).
+4. Restrict sign-ups in the Clerk dashboard, unless you want anyone signing in.
+5. Set `NEXT_PUBLIC_REQUIRE_AUTH=true`.
+
+Step 5 on its own gets you a 404 for every visitor.
+
+Two things to settle once it is on. If the app is embedded, check that the login survives the
+iframe — same-site cookies on a shared parent domain should carry, but that is unverified here, and
+the fallback is to stop embedding and link out instead. And treat authentication as the thing that
+gates spend: while the gateway balance is free-tier promotional credit an open endpoint risks a few
+dollars and then stops, whereas paid credit removes that ceiling.
+
 What is **not** solved, and would matter in production:
 
 - The rate limiter holds state per process. Across several serverless instances the effective limit
   is roughly (limit × instances). It raises the cost of abuse; it is not a hard ceiling. Durable
   counters (Redis, or a KV store from the Vercel Marketplace) are the real fix.
-- There is no authentication. Anyone who can reach the URL can spend your credits within the rate
-  limit. Put the route behind real auth, or behind Vercel deployment protection, before making it
-  public.
-- Client identity comes from `x-forwarded-for`, which is spoofable. That is why these are rate
-  limits and not authorization.
+- Client identity for signed-out callers comes from `x-forwarded-for`, which is spoofable. That is
+  why these are rate limits and not authorization.
 
 Tunable via env: `STORY_RATE_LIMIT`, `STORY_RATE_WINDOW_MS`, `STORY_MAX_CONCURRENT`,
 `STORY_MAX_CONCURRENT_GLOBAL`, `STORY_MAX_BODY_BYTES`.
