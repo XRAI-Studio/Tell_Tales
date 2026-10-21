@@ -114,13 +114,26 @@ development keys (`pk_test_...`) only work on localhost; pointed at a real domai
 `auth.protect()` rewrite to a 404 with `X-Clerk-Auth-Reason: dev-browser-missing`. The whole
 sequence is:
 
-1. Put the app on a custom domain whose DNS you control.
-2. Create a Clerk **production** instance for that domain and add the DNS records it asks for.
-3. Swap the Vercel environment to the production keys (`pk_live_...` / `sk_live_...`).
-4. Restrict sign-ups in the Clerk dashboard, unless you want anyone signing in.
-5. Set `NEXT_PUBLIC_REQUIRE_AUTH=true`.
+1. Put the app on a custom domain whose DNS you control. This one is on
+   `telltales.macscott.net`.
+2. Create a Clerk **production** instance for that domain and add every DNS record it asks for,
+   then wait until Clerk reports them verified *and* SSL issued.
+3. Point the Vercel environment at the production keys (`pk_live_...` / `sk_live_...`). Clerk here
+   arrived through the Vercel Marketplace, so check whether the integration has already updated
+   them before adding anything by hand — a manual duplicate of an integration-managed variable
+   conflicts with it.
+4. Set `NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in` and `NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up`.
+   Without them the SDK derives an Account Portal address from the publishable key — `@clerk/shared`
+   rewrites `clerk.example.com` to `accounts.example.com` — and `auth.protect()` sends signed-out
+   visitors to Clerk's hosted pages, leaving this app's own sign-in route unreachable.
+5. Give yourself a user on the production instance *before* restricting sign-ups. Development-instance
+   users do not carry over, so restricting first locks the owner out along with everyone else.
+6. Restrict sign-ups in the Clerk dashboard, unless you want anyone signing in.
+7. Set `NEXT_PUBLIC_REQUIRE_AUTH=true`.
+8. Redeploy. Every `NEXT_PUBLIC_*` value above is inlined at build time, so none of them change the
+   running app until a new build goes out.
 
-Step 5 on its own gets you a 404 for every visitor.
+Step 7 without step 2 gets you a 404 for every visitor.
 
 Two things to settle once it is on. If the app is embedded, check that the login survives the
 iframe — same-site cookies on a shared parent domain should carry, but that is unverified here, and
