@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { LegalSection, Term } from '@/components/LegalSection';
 
 export const metadata: Metadata = {
   title: 'Privacy Policy — Tell Tales',
@@ -18,17 +19,6 @@ export const metadata: Metadata = {
 const LAST_UPDATED = '21 October 2026';
 
 const CONTACT_EMAIL = 'scottmacscott@gmail.com';
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="mt-10">
-      <h2 className="font-legend text-xl font-semibold uppercase tracking-[0.14em] text-legend">
-        {title}
-      </h2>
-      <div className="mt-3 space-y-3 text-sm leading-relaxed text-legend-dim">{children}</div>
-    </section>
-  );
-}
 
 export default function PrivacyPage() {
   return (
@@ -52,42 +42,42 @@ export default function PrivacyPage() {
         exactly what happens to the data you give it.
       </p>
 
-      <Section title="What is collected">
+      <LegalSection title="What is collected">
         <p>
-          <strong className="text-legend">If you sign in</strong>, authentication is handled by
+          <Term>If you sign in</Term>, authentication is handled by
           Clerk. Depending on how you sign in, Clerk receives your email address and, where you use
           Google, the name and profile picture on your Google account. Tell Tales uses this only to
           know who you are and to keep you signed in. It is not used for marketing and is never sold
           or shared.
         </p>
         <p>
-          <strong className="text-legend">When you generate a story</strong>, the settings you chose
+          <Term>When you generate a story</Term>, the settings you chose
           — plot, characters, tone, and the rest — are sent to a language model to be turned into
           prose. Fact mode additionally sends the draft to a search-capable model for verification,
           which means the content of that draft reaches a provider that searches the web.
         </p>
         <p>
-          <strong className="text-legend">Your IP address</strong> is held briefly in memory to
+          <Term>Your IP address</Term> is held briefly in memory to
           enforce rate limits, so one visitor cannot exhaust the service for everyone. It is kept
           only for the length of the rate-limit window, is never written to disk, and is not linked
           to your account or your stories.
         </p>
-      </Section>
+      </LegalSection>
 
-      <Section title="What is not collected">
+      <LegalSection title="What is not collected">
         <p>
           There is no analytics, no tracking pixels, no advertising technology, and no third-party
           scripts of that kind anywhere in this application. Nobody is measuring what you click.
         </p>
         <p>
-          Your stories are <strong className="text-legend">not stored on any server</strong>. There
+          Your stories are <Term>not stored on any server</Term>. There
           is no database. Generated stories are streamed to your browser and saved only in that
           browser&rsquo;s local storage, on your own device. Clearing your browser data deletes them
           permanently, and no copy exists anywhere else.
         </p>
-      </Section>
+      </LegalSection>
 
-      <Section title="Voice input">
+      <LegalSection title="Voice input">
         <p>
           The microphone button, where your browser offers one, uses the Web Speech API. This is a
           browser feature rather than something this application implements. Be aware that in
@@ -99,13 +89,13 @@ export default function PrivacyPage() {
           Nothing is recorded unless you press the microphone button, and the audio is never sent to
           or stored by Tell Tales.
         </p>
-      </Section>
+      </LegalSection>
 
-      <Section title="Who else is involved">
+      <LegalSection title="Who else is involved">
         <p>These are the third parties that necessarily see some data, and why:</p>
         <ul className="list-disc space-y-2 pl-5">
           <li>
-            <strong className="text-legend">Clerk</strong> — authentication. Holds your account
+            <Term>Clerk</Term> — authentication. Holds your account
             record.{' '}
             <a
               href="https://clerk.com/legal/privacy"
@@ -118,7 +108,7 @@ export default function PrivacyPage() {
             .
           </li>
           <li>
-            <strong className="text-legend">Vercel</strong> — hosting, and the AI Gateway that story
+            <Term>Vercel</Term> — hosting, and the AI Gateway that story
             requests pass through. Vercel keeps standard server request logs.{' '}
             <a
               href="https://vercel.com/legal/privacy-policy"
@@ -131,26 +121,26 @@ export default function PrivacyPage() {
             .
           </li>
           <li>
-            <strong className="text-legend">Language model providers</strong> — reached through the
+            <Term>Language model providers</Term> — reached through the
             gateway, these receive your story settings in order to write the story, and in fact mode
             the draft as well.
           </li>
           <li>
-            <strong className="text-legend">Google</strong> — only if you choose to sign in with
+            <Term>Google</Term> — only if you choose to sign in with
             Google, and only to confirm your identity.
           </li>
         </ul>
-      </Section>
+      </LegalSection>
 
-      <Section title="Cookies">
+      <LegalSection title="Cookies">
         <p>
           The only cookie set is the session cookie that keeps you signed in, placed by Clerk. There
           are no advertising or analytics cookies. If sign-in is turned off, the application sets no
           cookies at all.
         </p>
-      </Section>
+      </LegalSection>
 
-      <Section title="Keeping and deleting your data">
+      <LegalSection title="Keeping and deleting your data">
         <p>
           Stories live in your browser, so you delete them by clearing your browser data or using
           the controls in the app. No request to anyone is needed, because nobody else holds them.
@@ -160,23 +150,23 @@ export default function PrivacyPage() {
           deleted, email the address below and it will be removed, along with anything connected to
           it.
         </p>
-      </Section>
+      </LegalSection>
 
-      <Section title="Children">
+      <LegalSection title="Children">
         <p>
           Tell Tales is not directed at children under 13 and does not knowingly collect their
           personal information.
         </p>
-      </Section>
+      </LegalSection>
 
-      <Section title="Changes">
+      <LegalSection title="Changes">
         <p>
           If this policy changes, the date at the top changes with it. Material changes to what is
           collected will be reflected here before they take effect.
         </p>
-      </Section>
+      </LegalSection>
 
-      <Section title="Contact">
+      <LegalSection title="Contact">
         <p>
           Questions, or a deletion request:{' '}
           <a
@@ -186,7 +176,7 @@ export default function PrivacyPage() {
             {CONTACT_EMAIL}
           </a>
         </p>
-      </Section>
+      </LegalSection>
     </main>
   );
 }
