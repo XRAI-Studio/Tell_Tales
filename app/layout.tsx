@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { ClerkProvider } from '@clerk/nextjs';
 import { requireAuth } from '@/lib/auth-mode';
 import { Barlow, Barlow_Condensed, Newsreader, IBM_Plex_Mono } from 'next/font/google';
@@ -47,6 +48,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Skipped in public mode so the embedded orb does not load Clerk's
             client bundle for a session it will never have. */}
         {requireAuth() ? <ClerkProvider>{children}</ClerkProvider> : children}
+        {/* In the layout rather than the console so it is also present on the
+            sign-in page, which is where Google's consent flow sends people. */}
+        <footer className="mt-auto border-t border-edge px-4 py-4 text-center sm:px-6">
+          <Link
+            href="/privacy"
+            className="text-xs uppercase tracking-[0.18em] text-legend-faint transition hover:text-lamp-amber"
+          >
+            Privacy
+          </Link>
+        </footer>
       </body>
     </html>
   );

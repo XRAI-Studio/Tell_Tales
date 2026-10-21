@@ -10,7 +10,10 @@ import { requireAuth } from '@/lib/auth-mode';
  * on the console. The generation route does its own `auth()` check, because
  * per Next's own guidance a proxy must not be the sole authorization boundary.
  */
-const isPublic = createRouteMatcher(['/sign-in(.*)', '/sign-up(.*)']);
+// `/privacy` has to stay reachable signed-out: Google checks the URL given on
+// the OAuth consent screen, and someone deciding whether to sign in cannot be
+// asked to sign in first to read the privacy policy.
+const isPublic = createRouteMatcher(['/sign-in(.*)', '/sign-up(.*)', '/privacy']);
 const isApi = createRouteMatcher(['/api(.*)']);
 
 export default clerkMiddleware(async (auth, req) => {
